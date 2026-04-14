@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web-based AI 生管選址規劃系統</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+        .city-checkboxes { max-height: 150px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 5px; background: white;}
+    </style>
+</head>
+<body>
+
+<div class="container py-4">
+    <h2 class="text-center mb-4">🏭 AI 生產與作業管理 - 廠址選擇規劃</h2>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">1. 學生資訊</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4"><input type="text" id="stuClass" class="form-control" placeholder="班級"></div>
+            <div class="col-md-4"><input type="text" id="stuId" class="form-control" placeholder="學號"></div>
+            <div class="col-md-4"><input type="text" id="stuName" class="form-control" placeholder="姓名"></div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-success text-white">2. 選擇候選地點</div>
+                <div class="card-body">
+                    <p class="text-muted small">請勾選你想評估的縣市 (至少2個)</p>
+                    <div class="city-checkboxes">
+                        {% for city in cities %}
+                        <div class="form-check">
+                            <input class="form-check-input city-select" type="checkbox" value="{{ city }}" id="city_{{ loop.index }}">
+                            <label class="form-check-label" for="city_{{ loop.index }}">{{ city }}</label>
+                        </div>
+                        {% endfor %} </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-success text-white">3. 設定評估因素與權重</div>
+                <div class="card-body">
+                    <p class="text-muted small">權重總和必須等於 1.0 (或 100%)。您可以自行調整權重或移除不需要的因素。</p>
+                    <table class="table table-sm" id="factorTable">
+                        <thead>
+                            <tr><th>因素名稱</th><th>權重 (0~1)</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for factor in default_factors %}
+                            <tr>
+                                <td><input type="text" class="form-control factor-name" value="{{ factor }}" readonly></td>
+                                <td><input type="number" class="form-control factor-weight" value="0.16" step="0.01" min="0" max="1"></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="generateRatingGrid()">確認地點與權重，產生評分表</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" id="ratingSection" style="display:none;">
+        <div class="card-header bg-warning text-dark">4. 各地點評分 (1-10分)</div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered text-center" id="ratingTable">
+                    </table>
+            </div>
+            <button class="btn btn-primary w-100 mt-2" onclick="calculateResult()">交由系統即時運算</button>
+        </div>
+    </div>
+
+    <div class="card" id="resultSection" style="display:none;">
+        <div class="card-header bg-info text-white">5. 視覺化呈現與 AI 輔助分析</div>
+        <div class="card-body">
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <h5 class="text-center">各地點總分比較 (Bar Chart)</h5>
+                    <div class="chart-container"><canvas id="barChart"></canvas></div>
+                </div>
+                <div class="col-md-6">
+                    <h5 class="text-center">各因素貢獻度分析 (Stacked Chart)</h5>
+                    <div class="chart-container"><canvas id="stackedChart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="alert alert-secondary">
+                <h5>🤖 AI 分析報告</h5>
+                <p id="aiExplanation"></p>
+                <p id="aiImpact"></p>
+                <hr>
+                <p class="fw-bold text-danger" id="aiSensitivity"></p>
+                <textarea id="studentAnswer" class="form-control" rows="3" placeholder="請根據 AI 的提問，輸入你的決策思維..."></textarea>
+            </div>
+            
+            <button class="btn btn-success w-100" onclick="submitFinal()">確認並繳交作業</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let selectedCities = [];
+    let factors = [];
+    let currentAIQuestion = "";
+    let bestLocationResult = "";
+    let barChartObj = null;
+    let stackedChartObj = null;
+
+    function generateRatingGrid() {
+        // 取得選中的城市
+        selectedCities = Array.from(document.querySelectorAll('.city-select:checked')).map(cb => cb.value);
+        if (selectedCities.length < 2) {
+            alert("請至少選擇 2 個地點進行比較！");
+            return;
+        }
+
+        // 取得因素與檢查權重 (前端防呆提示)
+        factors = [];
+        let totalWeight = 0;
+        const rows = document.querySelectorAll('#factorTable tbody tr');
+        rows.forEach(row => {
+            const name = row.querySelector('.factor-name').value;
+            const weight = parseFloat(row.querySelector('.factor-weight').value) || 0;
+            if (weight > 0) {
+                factors.push({ name, weight });
+                totalWeight += weight;
+            }
+        });
+
+        if (Math.abs(totalWeight - 1.0) > 0.01) {
+            alert("注意：權重總和應為 1.0 (目前總和為 " + totalWeight.toFixed(2) + ")，系統運算時將會阻擋，請先修正！");
+        }
+
+        // 產生評分表
+        let thead = "<thead><tr><th>因素 / 地點</th>";
+        selectedCities.forEach(city => thead += `<th>${city}</th>`);
+        thead += "</tr></thead>";
+
+        let tbody = "<tbody>";
+        factors.forEach((f, i) => {
+            tbody += `<tr><td class="align-middle fw-bold">${f.name} <br><small class="text-muted">(權重: ${f.weight})</small></td>`;
+            selectedCities.forEach((city, j) => {
+                tbody += `<td><input type="number" class="form-control text-center rating-input" data-factor="${f.name}" data-city="${city}" min="1" max="10" value="5"></td>`;
+            });
+            tbody += "</tr>";
+        });
+        tbody += "</tbody>";
+
+        document.getElementById('ratingTable').innerHTML = thead + tbody;
+        document.getElementById('ratingSection').style.display = 'block';
+        document.getElementById('resultSection').style.display = 'none'; // 重新選定時隱藏結果
+    }
+
+    async function calculateResult() {
+        const ratings = {};
+        selectedCities.forEach(city => ratings[city] = {});
+        
+        document.querySelectorAll('.rating-input').forEach(input => {
+            const city = input.getAttribute('data-city');
+            const factor = input.getAttribute('data-factor');
+            ratings[city][factor] = parseFloat(input.value) || 0;
+        });
+
+        const weightsDict = {};
+        factors.forEach(f => weightsDict[f.name] = f.weight);
+
+        try {
+            const response = await fetch('/api/calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ weights: weightsDict, ratings: ratings })
+            });
+            
+            const data = await response.json();
+            
+            // 🟢 後端防呆攔截：如果權重加起來不等於 1，顯示警告並中斷執行
+            if (response.status === 400 || data.status === "error") {
+                alert("⚠️ 錯誤：" + data.message);
+                return;
+            }
+            
+            // 渲染結果與 AI 分析
+            document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('aiExplanation').innerHTML = data.ai_analysis.explanation;
+            document.getElementById('aiImpact').innerHTML = data.ai_analysis.impact_factors;
+            document.getElementById('aiSensitivity').innerText = data.ai_analysis.sensitivity_prompt;
+            
+            currentAIQuestion = data.ai_analysis.sensitivity_prompt;
+            bestLocationResult = data.recommended_option;
+
+            renderCharts(data.calculated_scores, data.contributions);
+
+        } catch (err) {
+            alert("系統運算發生錯誤，請確認伺服器是否正常運行！");
+            console.error(err);
+        }
+    }
+
+    function renderCharts(scores, contributions) {
+        const labels = Object.keys(scores);
+        const scoreData = Object.values(scores);
+
+        // 繪製 Bar Chart
+        if (barChartObj) barChartObj.destroy();
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        barChartObj = new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '加權總分',
+                    data: scoreData,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: { maintainAspectRatio: false }
+        });
+
+        // 繪製 Stacked Chart
+        if (stackedChartObj) stackedChartObj.destroy();
+        const ctxStacked = document.getElementById('stackedChart').getContext('2d');
+        
+        const datasets = factors.map((f, index) => {
+            const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
+            return {
+                label: f.name,
+                data: labels.map(city => contributions[city][f.name]),
+                backgroundColor: colors[index % colors.length]
+            };
+        });
+
+        stackedChartObj = new Chart(ctxStacked, {
+            type: 'bar',
+            data: { labels: labels, datasets: datasets },
+            options: {
+                maintainAspectRatio: false,
+                scales: { x: { stacked: true }, y: { stacked: true } }
+            }
+        });
+    }
+
+    async function submitFinal() {
+        const payload = {
+            studentClass: document.getElementById('stuClass').value,
+            studentId: document.getElementById('stuId').value,
+            studentName: document.getElementById('stuName').value,
+            locationCount: selectedCities.length,
+            bestLocation: bestLocationResult,
+            aiQuestion: currentAIQuestion,
+            q2Answer: document.getElementById('studentAnswer').value
+        };
+
+        if(!payload.studentName || !payload.q2Answer) {
+            alert("請確實填寫姓名並回答 AI 提問！");
+            return;
+        }
+
+        const response = await fetch('/api/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const resData = await response.json();
+        alert(resData.message);
+    }
+</script>
+</body>
+</html>
