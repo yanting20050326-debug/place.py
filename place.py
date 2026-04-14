@@ -1,15 +1,15 @@
 """
 選址規劃與 AI 敏感度分析系統 (Google Sheets 雲端版)
-功能：將學生選址數據與決策思維直接同步至 Google 試算表。
 """
 
 from flask import Flask, request, jsonify, render_template
 import datetime
 import gspread
+import os
 
 app = Flask(__name__)
 
-# 常數設定：台灣本島縣市
+# 常數設定：台灣本島縣市 (排除離島)
 TAIWAN_CITIES = [
     "基隆市", "台北市", "新北市", "桃園市", "新竹縣", "新竹市", "苗栗縣",
     "台中市", "彰化縣", "南投縣", "雲林縣", "嘉義縣", "嘉義市", "台南市",
@@ -17,18 +17,20 @@ TAIWAN_CITIES = [
 ]
 
 # ----------------- Google Sheets 初始化 -----------------
-try:
-    # 讀取 credentials.json 並連線 (Render 上會從 Secret Files 讀取)
-    gc = gspread.service_account(filename='credentials.json')
-    # 請確保試算表名稱與你在雲端硬碟建立的一致
-    sh = gc.open('LocationPlanningDB').sheet1
-except Exception as e:
-    print(f"⚠️ Google Sheets 連線失敗：{e}")
-    sh = None
+def get_sheet():
+    try:
+        # Render 部署時會從 Secret Files 抓取 credentials.json
+        gc = gspread.service_account(filename='credentials.json')
+        # 請確認你的 Google Sheet 標題完全符合
+        return gc.open('LocationPlanningDB').sheet1
+    except Exception as e:
+        print(f"⚠️ Google Sheets 連線失敗：{e}")
+        return None
+
+sh = get_sheet()
 # --------------------------------------------------------
 
 def calculate_location_scores(weights: dict, ratings: dict) -> tuple:
-    """計算各地點的加權總分與各因素貢獻度"""
     results = {}
     contributions = {}
     best_option = ""
@@ -52,7 +54,6 @@ def calculate_location_scores(weights: dict, ratings: dict) -> tuple:
     return results, contributions, best_option, round(best_value, 2)
 
 def generate_ai_analysis(best_option: str, weights: dict, contributions: dict) -> dict:
-    """產生 AI 輔助分析與敏感度問題"""
     if not best_option: return {}
     best_loc_contrib = contributions[best_option]
     top_factor = max(best_loc_contrib, key=best_loc_contrib.get)
@@ -79,7 +80,7 @@ def calculate_api():
         if abs(total_weight - 1.0) > 0.01:
             return jsonify({"status": "error", "message": f"權重總和必須為 1.0！目前總和為 {total_weight:.2f}"}), 400
     except ValueError:
-        return jsonify({"status": "error", "message": "權重格式錯誤，請確認輸入的都是數字！"}), 400
+        return jsonify({"status": "error", "message": "權重格式錯誤！"}), 400
     
     results, contributions, best_option, best_value = calculate_location_scores(weights, ratings)
     ai_analysis = generate_ai_analysis(best_option, weights, contributions)
@@ -95,9 +96,9 @@ def calculate_api():
 
 @app.route('/api/submit', methods=['POST'])
 def submit_answer():
-    """將資料寫入 Google Sheets，徹底取代 CSV"""
-    if sh is None:
-        return jsonify({"status": "error", "message": "雲端資料庫連線失敗，請檢查 API 設定。"}), 500
+    global sh
+    if sh is None: sh = get_sheet() # 嘗試重新連線
+    if sh is None: return jsonify({"status": "error", "message": "雲端資料庫連線失敗。"}), 500
 
     data = request.json
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -115,37 +116,20 @@ def submit_answer():
     
     try:
         sh.append_row(row_data)
-        return jsonify({"status": "success", "message": "分析結果已成功同步至 Google 雲端試算表！"})
+        return jsonify({"status": "success", "message": "已同步至 Google 雲端試算表！"})
     except Exception as e:
-        return jsonify({"status": "error", "message": f"寫入雲端失敗：{e}"}), 500
+        return jsonify({"status": "error", "message": f"寫入失敗：{e}"}), 500
 
 @app.route('/admin')
 def admin_view():
-    """從 Google Sheets 抓取即時數據顯示"""
-    if sh is None: return "<h2>雲端試算表尚未連線。</h2>"
+    global sh
+    if sh is None: sh = get_sheet()
+    if sh is None: return "<h2>雲端試算表連線中，請稍後刷新。</h2>"
     
     try:
         records = sh.get_all_values()
-        if not records or len(records) <= 1: 
-            return "<h2>目前雲端試算表還沒有學生提交紀錄。</h2>"
-        
-        html = """
-        <html>
-        <head>
-            <meta charset='utf-8'>
-            <title>老師專用後台</title>
-            <style>
-                body {font-family: Arial, sans-serif; margin: 20px;}
-                table {width: 100%; border-collapse: collapse; margin-top: 20px;}
-                th, td {border: 1px solid #ddd; padding: 10px; text-align: left;}
-                th {background: #007bff; color: white;}
-                tr:nth-child(even) {background-color: #f2f2f2;}
-            </style>
-        </head>
-        <body>
-            <h2>👨‍🏫 選址規劃系統 - 雲端即時後台</h2>
-            <table>
-        """
+        html = "<html><head><meta charset='utf-8'><title>後台</title><style>body{font-family:sans-serif;margin:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:10px;}th{background:#007bff;color:white;}</style></head><body>"
+        html += "<h2>👨‍🏫 雲端即時後台</h2><table>"
         for i, row in enumerate(records):
             html += "<tr>"
             for col in row:
@@ -153,7 +137,7 @@ def admin_view():
             html += "</tr>"
         return html + "</table></body></html>"
     except Exception as e:
-        return f"<h2>讀取雲端資料時發生錯誤：{e}</h2>"
+        return f"<h2>讀取錯誤：{e}</h2>"
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
