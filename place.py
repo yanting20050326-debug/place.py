@@ -22,7 +22,7 @@ def get_sheet():
         # Render 部署時會從 Secret Files 抓取 credentials.json
         gc = gspread.service_account(filename='credentials.json')
         # 請確認你的 Google Sheet 標題完全符合
-        return gc.open('LocationPlanningDB').sheet1
+        return gc.open('生管模型3').sheet1
     except Exception as e:
         print(f"⚠️ Google Sheets 連線失敗：{e}")
         return None
