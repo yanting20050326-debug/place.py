@@ -75,7 +75,7 @@
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-bordered text-center" id="ratingTable">
-                    </table>
+                </table>
             </div>
             <button class="btn btn-primary w-100 mt-2" onclick="calculateResult()">系統即時運算</button>
         </div>
@@ -118,7 +118,7 @@
     let barChartObj = null;
     let stackedChartObj = null;
 
-    // 新增：即時計算並更新顯示的權重總和
+    // 即時計算並更新顯示的權重總和
     function updateWeightSum() {
         let total = 0;
         document.querySelectorAll('.factor-weight').forEach(input => {
@@ -127,7 +127,7 @@
         document.getElementById('weightSumDisplay').innerText = `當前權重總和：${total.toFixed(2)}`;
     }
 
-    // 新增：當頁面載入完成後，綁定權重輸入框的事件，並初始化總和
+    // 當頁面載入完成後，綁定權重輸入框的事件，並初始化總和
     document.addEventListener("DOMContentLoaded", function() {
         updateWeightSum();
         document.querySelectorAll('.factor-weight').forEach(input => {
@@ -143,7 +143,7 @@
             return;
         }
 
-        // 取得因素與檢查權重 (前端防呆提示)
+        // 取得因素與檢查權重
         factors = [];
         let totalWeight = 0;
         const rows = document.querySelectorAll('#factorTable tbody tr');
@@ -177,7 +177,7 @@
 
         document.getElementById('ratingTable').innerHTML = thead + tbody;
         document.getElementById('ratingSection').style.display = 'block';
-        document.getElementById('resultSection').style.display = 'none'; // 重新選定時隱藏結果
+        document.getElementById('resultSection').style.display = 'none';
     }
 
     async function calculateResult() {
@@ -202,7 +202,7 @@
             
             const data = await response.json();
             
-            // 🟢 後端防呆攔截：如果權重加起來不等於 1，顯示警告並中斷執行
+            // 後端防呆攔截
             if (response.status === 400 || data.status === "error") {
                 alert("⚠️ 錯誤：" + data.message);
                 return;
@@ -272,18 +272,23 @@
 
     async function submitFinal() {
         const payload = {
-            studentClass: document.getElementById('stuClass').value,
-            studentId: document.getElementById('stuId').value,
-            studentName: document.getElementById('stuName').value,
+            studentClass: document.getElementById('stuClass').value.trim(),
+            studentId: document.getElementById('stuId').value.trim(),
+            studentName: document.getElementById('stuName').value.trim(),
             locationCount: selectedCities.length,
             bestLocation: bestLocationResult,
             aiQuestion: currentAIQuestion,
-            q2Answer: document.getElementById('studentAnswer').value
+            q2Answer: document.getElementById('studentAnswer').value.trim()
         };
 
-        // 更新防呆機制：檢查班級、學號、姓名是否都有填寫
-        if(!payload.studentClass || !payload.studentId || !payload.studentName || !payload.q2Answer) {
-            alert("請確實填寫班級、學號、姓名，並回答 AI 提問！");
+        // 檢查學生資訊與回答是否都有填寫
+        if(!payload.studentClass || !payload.studentId || !payload.studentName) {
+            alert("⚠️ 請確實填寫「班級」、「學號」與「姓名」！");
+            return;
+        }
+
+        if(!payload.q2Answer) {
+            alert("⚠️ 請確實回答 AI 分析提問！");
             return;
         }
 
