@@ -127,11 +127,27 @@
         document.getElementById('weightSumDisplay').innerText = `當前權重總和：${total.toFixed(2)}`;
     }
 
-    // 當頁面載入完成後，綁定權重輸入框的事件，並初始化總和
+    // 🔴 新增：隱藏第 5 區結果的防呆機制
+    function resetResults() {
+        document.getElementById('resultSection').style.display = 'none';
+        document.getElementById('studentAnswer').value = ''; // 清空學生的回答避免誤傳舊資料
+    }
+
+    // 當頁面載入完成後，綁定初始事件
     document.addEventListener("DOMContentLoaded", function() {
         updateWeightSum();
+        
+        // 綁定第 3 區：權重輸入框改變時，更新總和並隱藏結果
         document.querySelectorAll('.factor-weight').forEach(input => {
-            input.addEventListener('input', updateWeightSum);
+            input.addEventListener('input', () => {
+                updateWeightSum();
+                resetResults();
+            });
+        });
+
+        // 綁定第 2 區：地點勾選改變時，隱藏結果
+        document.querySelectorAll('.city-select').forEach(checkbox => {
+            checkbox.addEventListener('change', resetResults);
         });
     });
 
@@ -177,7 +193,12 @@
 
         document.getElementById('ratingTable').innerHTML = thead + tbody;
         document.getElementById('ratingSection').style.display = 'block';
-        document.getElementById('resultSection').style.display = 'none';
+        resetResults(); // 重新產生表格時，隱藏第 5 區
+
+        // 🔴 綁定第 4 區：當評分輸入框被修改時，隱藏結果
+        document.querySelectorAll('.rating-input').forEach(input => {
+            input.addEventListener('input', resetResults);
+        });
     }
 
     async function calculateResult() {
