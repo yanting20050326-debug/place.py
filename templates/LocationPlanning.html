@@ -21,9 +21,9 @@
     <div class="card">
         <div class="card-header bg-primary text-white">1. 學生資訊</div>
         <div class="card-body row g-3">
-            <div class="col-md-4"><input type="text" id="stuClass" class="form-control" placeholder="班級"></div>
-            <div class="col-md-4"><input type="text" id="stuId" class="form-control" placeholder="學號"></div>
-            <div class="col-md-4"><input type="text" id="stuName" class="form-control" placeholder="姓名"></div>
+            <div class="col-md-4"><input type="text" id="stuClass" class="form-control" placeholder="班級" required></div>
+            <div class="col-md-4"><input type="text" id="stuId" class="form-control" placeholder="學號" required></div>
+            <div class="col-md-4"><input type="text" id="stuName" class="form-control" placeholder="姓名" required></div>
         </div>
     </div>
 
@@ -39,7 +39,8 @@
                             <input class="form-check-input city-select" type="checkbox" value="{{ city }}" id="city_{{ loop.index }}">
                             <label class="form-check-label" for="city_{{ loop.index }}">{{ city }}</label>
                         </div>
-                        {% endfor %} </div>
+                        {% endfor %} 
+                    </div>
                 </div>
             </div>
         </div>
@@ -47,7 +48,9 @@
             <div class="card">
                 <div class="card-header bg-success text-white">3. 設定評估因素與權重</div>
                 <div class="card-body">
-                    <p class="text-muted small">權重總和必須等於 1.0 (或 100%)。您可以自行調整權重或移除不需要的因素。</p>
+                    <p class="text-muted small mb-1">權重總和必須等於 1.0 (或 100%)。您可以自行調整權重或移除不需要的因素。</p>
+                    <p class="mb-3 text-danger fw-bold" id="weightSumDisplay">當前權重總和：0.00</p>
+                    
                     <table class="table table-sm" id="factorTable">
                         <thead>
                             <tr><th>因素名稱</th><th>權重 (0~1)</th></tr>
@@ -114,6 +117,23 @@
     let bestLocationResult = "";
     let barChartObj = null;
     let stackedChartObj = null;
+
+    // 新增：即時計算並更新顯示的權重總和
+    function updateWeightSum() {
+        let total = 0;
+        document.querySelectorAll('.factor-weight').forEach(input => {
+            total += parseFloat(input.value) || 0;
+        });
+        document.getElementById('weightSumDisplay').innerText = `當前權重總和：${total.toFixed(2)}`;
+    }
+
+    // 新增：當頁面載入完成後，綁定權重輸入框的事件，並初始化總和
+    document.addEventListener("DOMContentLoaded", function() {
+        updateWeightSum();
+        document.querySelectorAll('.factor-weight').forEach(input => {
+            input.addEventListener('input', updateWeightSum);
+        });
+    });
 
     function generateRatingGrid() {
         // 取得選中的城市
@@ -261,8 +281,9 @@
             q2Answer: document.getElementById('studentAnswer').value
         };
 
-        if(!payload.studentName || !payload.q2Answer) {
-            alert("請確實填寫姓名並回答 AI 提問！");
+        // 更新防呆機制：檢查班級、學號、姓名是否都有填寫
+        if(!payload.studentClass || !payload.studentId || !payload.studentName || !payload.q2Answer) {
+            alert("請確實填寫班級、學號、姓名，並回答 AI 提問！");
             return;
         }
 
