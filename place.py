@@ -116,7 +116,7 @@ def submit_answer():
     
     try:
         sh.append_row(row_data)
-        return jsonify({"status": "success", "message": "已同步至 Google 雲端試算表！"})
+        return jsonify({"status": "success", "message": "交卷成功，老師已收到你的答案"})
     except Exception as e:
         return jsonify({"status": "error", "message": f"寫入失敗：{e}"}), 500
 
